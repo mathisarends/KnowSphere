@@ -12,18 +12,14 @@ from draft_processor import DraftProcessor
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(f"draft_revision_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"),
-        logging.StreamHandler()
-    ]
 )
 
 logger = logging.getLogger("draft_revision_main")
 
 # Konfiguration
-MODEL_NAME = os.environ.get("LLM_MODEL", "gpt-4o")
+MODEL_NAME = os.environ.get("LLM_MODEL", "gpt-4o-mini")
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "5"))
-MAX_DRAFTS = int(os.environ.get("MAX_DRAFTS", "0"))  # 0 bedeutet keine Begrenzung
+MAX_DRAFTS = int(os.environ.get("MAX_DRAFTS", "0"))
 
 async def process_all_drafts():
     """

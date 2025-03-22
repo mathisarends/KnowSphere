@@ -1,10 +1,8 @@
 # File: draft_processor.py
 import logging
 import os
-from typing import Dict, List, Any, Optional, Union
-from datetime import datetime
+from typing import Dict, Any
 
-from langchain_core.messages import AIMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
@@ -147,6 +145,8 @@ class DraftProcessor:
         """
         revision = await self.revision_chain.ainvoke({"title": title, "content": content})
         revision_text = revision.content
+        
+        print("revision_text", revision_text)
         
         # Parsing der Revision
         new_title = title  # Standardwert, falls kein neuer Titel angegeben
