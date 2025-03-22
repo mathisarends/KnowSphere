@@ -99,23 +99,78 @@ class NotionPageManager(AbstractNotionClient):
             self.logger.warning("Seite teilweise geleert. %d von %d Blöcken gelöscht.", deleted_count, len(blocks))
             return f"Seite teilweise geleert. {deleted_count} von {len(blocks)} Blöcken gelöscht."
     
-    async def delete_block(self, block_id: str) -> bool:
-        """Löscht einen bestimmten Block von der Seite.
+    async def update_page_content(self, new_title: str = None, new_content: str = None, icon_emoji: str = "🤖") -> str:
+        """Aktualisiert den Inhalt einer Notion-Seite inkl. Titel, Inhalt, Status und Icon.
         
         Args:
-            block_id: ID des zu löschenden Blocks
+            new_title: Neuer Titel für die Seite (optional)
+            new_content: Neuer Inhalt als Markdown-Text (optional)
+            icon_emoji: Emoji-Icon für die Seite (Standard: Roboter-Emoji)
             
         Returns:
-            True, wenn das Löschen erfolgreich war, sonst False
+            Statusmeldung über den Erfolg der Aktualisierung
         """
-        response = await self._make_request(
-            HttpMethod.DELETE,
-            f"blocks/{block_id}"
+        results = []
+        
+        # Titel und Icon in einem Request aktualisieren
+        update_data = {
+            "properties": {},
+            "icon": {
+                "type": "emoji",
+                "emoji": icon_emoji
+            }
+        }
+        
+        # Titel hinzufügen, falls angegeben
+        if new_title:
+            update_data["properties"]["Name"] = {
+                "title": [
+                    {
+                        "text": {
+                            "content": new_title
+                        }
+                    }
+                ]
+            }
+        
+        # Status auf "KI-Draft" setzen
+        update_data["properties"]["Status"] = {
+            "status": {
+                "name": "KI-Draft"
+            }
+        }
+        
+        # Page aktualisieren (Titel, Icon und Status in einem Request)
+        update_response = await self._make_request(
+            HttpMethod.PATCH,
+            f"pages/{self.page_id}",
+            update_data
         )
         
-        if "error" in response:
-            self.logger.error("Fehler beim Löschen des Blocks %s: %s", block_id, response.get('error'))
-            return False
+        if "error" in update_response:
+            error_msg = f"Fehler bei der Aktualisierung der Seite: {update_response.get('error')}"
+            self.logger.error(error_msg)
+            results.append(error_msg)
         else:
-            self.logger.info("Block %s erfolgreich gelöscht.", block_id)
-            return True
+            if new_title:
+                self.logger.info("Titel erfolgreich aktualisiert: %s", new_title)
+                results.append(f"Titel erfolgreich aktualisiert: {new_title}")
+                # Attribute aktualisieren falls vorhanden
+                if hasattr(self, 'title'):
+                    self.title = new_title
+                    
+            self.logger.info(f"Icon erfolgreich auf {icon_emoji} gesetzt.")
+            results.append(f"Icon erfolgreich auf {icon_emoji} gesetzt.")
+            
+            self.logger.info("Status erfolgreich auf 'KI-Draft' gesetzt.")
+            results.append("Status erfolgreich auf 'KI-Draft' gesetzt.")
+        
+        # Inhalt aktualisieren, falls angegeben
+        if new_content:
+            clear_result = await self.clear_page()
+            results.append(clear_result)
+            
+            append_result = await self.append_content(new_content)
+            results.append(append_result)
+        
+        return "\n".join(results)
