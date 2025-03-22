@@ -2,12 +2,11 @@
 from typing import Any, Dict, List, Optional
 
 from notion.core.notion_content_converter import NotionContentConverter
-from notion.core.notion_page_writer import NotionPageWriter
-
+from notion.core.notion_page_manager import NotionPageManager
 
 class NotionClipboardManager:
     def __init__(self, token: Optional[str] = None):
-        self.page_writer = NotionPageWriter(page_name="JARVIS_CLIPBOARD", token=token)
+        self.page_writer = NotionPageManager(page_name="JARVIS_CLIPBOARD", token=token)
         self.converter = NotionContentConverter()
     
     async def __aenter__(self):
@@ -37,20 +36,20 @@ async def main():
     """Beispiel für die Verwendung der neuen Klassen."""
     
     # Beispiel 1: Generischer NotionPageWriter
-    async with NotionPageWriter(page_name="JARVIS_CLIPBOARD") as page_writer:
+    async with NotionPageManager(page_name="JARVIS_CLIPBOARD") as page_writer:
         # Inhalt hinzufügen
         await page_writer.append_content("""
-# Test Überschrift
+        # Test Überschrift
 
-Dies ist ein Testabsatz mit **fetten** und *kursiven* Text.
+        Dies ist ein Testabsatz mit **fetten** und *kursiven* Text.
 
-- Listenpunkt 1
-- Listenpunkt 2
+        - Listenpunkt 1
+        - Listenpunkt 2
 
-```python
-def hello():
-    print("Hallo, Welt!")
-```
+        ```python
+        def hello():
+            print("Hallo, Welt!")
+        ```
         """, add_divider=True)
         
         # Seiteninhalt abrufen

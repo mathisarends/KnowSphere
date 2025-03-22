@@ -3,8 +3,7 @@ from notion.core.notion_abstract_client import AbstractNotionClient, HttpMethod
 from notion.core.notion_content_converter import NotionContentConverter
 from notion.core.notion_pages import NotionPages
 
-
-class NotionPageWriter(AbstractNotionClient):
+class NotionPageManager(AbstractNotionClient):
     """Generische Klasse zum Schreiben und Verwalten von Notion-Seiten."""
     
     def __init__(self, page_id: str = None, page_name: str = None, token: Optional[str] = None):
@@ -25,15 +24,6 @@ class NotionPageWriter(AbstractNotionClient):
             raise ValueError("Entweder page_id oder page_name muss angegeben werden")
     
     async def append_content(self, text: str, add_divider: bool = False) -> str:
-        """Fügt formatierten Text zur Seite hinzu, optional mit einem Trennzeichen.
-        
-        Args:
-            text: Markdown-Text, der zur Seite hinzugefügt werden soll
-            add_divider: Ob ein Trennzeichen vor dem Inhalt hinzugefügt werden soll
-            
-        Returns:
-            Erfolgs- oder Fehlermeldung
-        """
         content_blocks = NotionContentConverter.markdown_to_blocks(text)
         
         if add_divider:
@@ -61,11 +51,6 @@ class NotionPageWriter(AbstractNotionClient):
             return "Text erfolgreich zur Seite hinzugefügt."
     
     async def get_page_content(self) -> List[Dict[str, Any]]:
-        """Ruft alle Inhalte von der Seite ab.
-        
-        Returns:
-            Liste von Block-Objekten oder leere Liste bei Fehler
-        """
         response = await self._make_request(
             HttpMethod.GET, 
             f"blocks/{self.page_id}/children"
@@ -87,12 +72,6 @@ class NotionPageWriter(AbstractNotionClient):
         return NotionContentConverter.blocks_to_text(blocks)
     
     async def clear_page(self) -> str:
-        """Löscht alle Inhalte von der Seite.
-        
-        Returns:
-            Erfolgs- oder Fehlermeldung
-        """
-        # Zuerst alle Blöcke auf der Seite abrufen
         blocks = await self.get_page_content()
         
         if not blocks:
