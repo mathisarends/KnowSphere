@@ -1,5 +1,5 @@
 import os
-import enum
+from enum import Enum
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, Union
 
@@ -10,7 +10,7 @@ from util.logging_mixin import LoggingMixin
 
 load_dotenv()
 
-class HttpMethod(enum.Enum):
+class HttpMethod(Enum):
     """HTTP methods enum for API requests."""
     GET = "get"
     POST = "post"
@@ -99,11 +99,6 @@ class AbstractNotionClient(ABC, LoggingMixin):
         except Exception as e:
             self.logger.error("Unexpected error: %s", str(e))
             return {"error": f"Unexpected error: {str(e)}"}
-    
-    @abstractmethod
-    async def fetch_data(self, *args, **kwargs):
-        """Abstract method that subclasses must implement for fetching data."""
-        pass
     
     async def get_page(self, page_id: str):
         """Get a page by ID."""
