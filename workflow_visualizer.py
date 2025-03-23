@@ -1,7 +1,6 @@
 # File: visualize_graph.py
 import asyncio
 from graph_processor import DraftLangGraph
-from IPython.display import Image, display
 
 async def visualize_graph():
     """

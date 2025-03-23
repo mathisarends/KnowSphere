@@ -1,0 +1,388 @@
+{
+  "1a6389d5-7bd3-8097-aa38-e93cb052615a": {
+    "title": "Wissen & Notizen",
+    "properties": {
+      "Status": {
+        "id": "Hid%7C",
+        "name": "Status",
+        "type": "status",
+        "status": {
+          "options": [
+            {
+              "id": "3d586fd9-b4dd-42ad-a34c-9f071fd4fb48",
+              "name": "Entwurf",
+              "color": "default",
+              "description": null
+            },
+            {
+              "id": "0eb1b865-0e69-408d-973b-3f5432a49e37",
+              "name": "Überarbeiten",
+              "color": "blue",
+              "description": null
+            },
+            {
+              "id": "@r{~",
+              "name": "KI-Draft",
+              "color": "purple",
+              "description": null
+            },
+            {
+              "id": "2d429821-8123-45c7-9cbb-0d055270dace",
+              "name": "Fertig",
+              "color": "green",
+              "description": null
+            }
+          ],
+          "groups": [
+            {
+              "id": "d597f342-13cc-4f56-9e7c-a64aee6c6a85",
+              "name": "To-do",
+              "color": "gray",
+              "option_ids": [
+                "3d586fd9-b4dd-42ad-a34c-9f071fd4fb48"
+              ]
+            },
+            {
+              "id": "73ba1aea-e0cb-4290-822e-1ea35c00c57b",
+              "name": "In progress",
+              "color": "blue",
+              "option_ids": [
+                "@r{~",
+                "0eb1b865-0e69-408d-973b-3f5432a49e37"
+              ]
+            },
+            {
+              "id": "e19643f3-9c58-4884-b15f-35b2269b0c69",
+              "name": "Complete",
+              "color": "green",
+              "option_ids": [
+                "2d429821-8123-45c7-9cbb-0d055270dace"
+              ]
+            }
+          ]
+        }
+      },
+      "📁 Projekte": {
+        "id": "WigE",
+        "name": "📁 Projekte",
+        "type": "relation",
+        "relation": {
+          "database_id": "1a6389d5-7bd3-80a3-a60e-cb6bc02f85d6",
+          "type": "single_property",
+          "single_property": {}
+        }
+      },
+      "Quelle": {
+        "id": "cKMF",
+        "name": "Quelle",
+        "type": "rich_text",
+        "rich_text": {}
+      },
+      "Tags": {
+        "id": "oiaG",
+        "name": "Tags",
+        "type": "multi_select",
+        "multi_select": {
+          "options": [
+            {
+              "id": "3b75c075-92a8-4620-90d6-3cf86d0ead37",
+              "name": "Timeblocking",
+              "color": "pink",
+              "description": null
+            },
+            {
+              "id": "ecb44861-0d9f-4a33-ac91-3558cf265fcb",
+              "name": "Produktivität",
+              "color": "red",
+              "description": null
+            },
+            {
+              "id": "b743136d-aa02-4906-86f3-cbb31b40d9a0",
+              "name": "Prioritäten",
+              "color": "yellow",
+              "description": null
+            },
+            {
+              "id": "e84cf962-2afb-4e0a-9cbd-9fe42c5a42b9",
+              "name": "Deep Work",
+              "color": "blue",
+              "description": null
+            },
+            {
+              "id": "3552d190-a4a7-4b49-85bd-7b1ca6a27969",
+              "name": "Read / Watch later",
+              "color": "orange",
+              "description": null
+            },
+            {
+              "id": "3575d71a-6e11-42f0-a254-80ac3747a98a",
+              "name": "Deutschlandstipendium",
+              "color": "gray",
+              "description": null
+            },
+            {
+              "id": "4582abf0-e60a-45eb-99fa-258893278e33",
+              "name": "Studium",
+              "color": "brown",
+              "description": null
+            },
+            {
+              "id": "9dbb9806-a386-455b-b6e4-32ef866a22da",
+              "name": "Emails",
+              "color": "default",
+              "description": null
+            },
+            {
+              "id": "26870c04-977f-4566-a2c1-b347bb8ba561",
+              "name": "Buchempfehlungen",
+              "color": "green",
+              "description": null
+            },
+            {
+              "id": "86b01873-69ac-4629-aba4-c4d630e2d757",
+              "name": "Courage",
+              "color": "purple",
+              "description": null
+            },
+            {
+              "id": "5111da8d-ea85-4b06-a0f3-5bbc22ff918f",
+              "name": "Programming",
+              "color": "gray",
+              "description": null
+            },
+            {
+              "id": "b98206d0-fa6c-4ee0-a1a8-5688a6403022",
+              "name": "Lernen",
+              "color": "brown",
+              "description": null
+            },
+            {
+              "id": "1218c024-6b0c-489a-89e2-0cb0b5feb8f0",
+              "name": "Idea",
+              "color": "yellow",
+              "description": null
+            },
+            {
+              "id": "a65231b8-49ca-46d2-88a1-23c7af127d8b",
+              "name": "AI",
+              "color": "yellow",
+              "description": null
+            },
+            {
+              "id": "5de86165-cfe1-4833-912b-8fd05edb99fa",
+              "name": "github",
+              "color": "gray",
+              "description": null
+            },
+            {
+              "id": "d6af9319-5606-4608-bc1f-a23d09ddab32",
+              "name": "Später ansehen",
+              "color": "purple",
+              "description": null
+            },
+            {
+              "id": "4c2f2efa-1a41-4bf8-b39b-caa3ae91733d",
+              "name": "Future Work",
+              "color": "pink",
+              "description": null
+            }
+          ]
+        }
+      },
+      "Thema": {
+        "id": "xd%5El",
+        "name": "Thema",
+        "type": "relation",
+        "relation": {
+          "database_id": "1a6389d5-7bd3-8034-bc69-fef680261842",
+          "type": "single_property",
+          "single_property": {}
+        }
+      },
+      "Name": {
+        "id": "title",
+        "name": "Name",
+        "type": "title",
+        "title": {}
+      }
+    },
+    "related_schemas": {
+      "📁 Projekte": {
+        "database_id": "1a6389d5-7bd3-80a3-a60e-cb6bc02f85d6",
+        "schema": {
+          "title": "Projekte",
+          "properties": {
+            "📋 Themen-Bibliothek": {
+              "id": "AG%5Bp",
+              "name": "📋 Themen-Bibliothek",
+              "type": "relation",
+              "relation": {
+                "database_id": "1a6389d5-7bd3-8034-bc69-fef680261842",
+                "type": "single_property",
+                "single_property": {}
+              }
+            },
+            "Status": {
+              "id": "RNOm",
+              "name": "Status",
+              "type": "status",
+              "status": {
+                "options": [
+                  {
+                    "id": "10123e32-d3bd-4139-b10a-1e8b0cf15428",
+                    "name": "Nicht begonnen",
+                    "color": "default",
+                    "description": null
+                  },
+                  {
+                    "id": "7604f28f-0567-45eb-a56e-dbe25f49122c",
+                    "name": "In Bearbeitung",
+                    "color": "blue",
+                    "description": null
+                  },
+                  {
+                    "id": "5bda28f2-d412-4218-8f92-c5ea4e00c82d",
+                    "name": "Erledigt",
+                    "color": "green",
+                    "description": null
+                  }
+                ],
+                "groups": [
+                  {
+                    "id": "7eb731ee-872c-4798-8b15-9a563ff24ec8",
+                    "name": "To-do",
+                    "color": "gray",
+                    "option_ids": [
+                      "10123e32-d3bd-4139-b10a-1e8b0cf15428"
+                    ]
+                  },
+                  {
+                    "id": "c9469e3a-2717-44d0-b180-25721ba6fb39",
+                    "name": "In progress",
+                    "color": "blue",
+                    "option_ids": [
+                      "7604f28f-0567-45eb-a56e-dbe25f49122c"
+                    ]
+                  },
+                  {
+                    "id": "895e5ac6-a7a8-4ab3-887c-e588ba2bac3b",
+                    "name": "Complete",
+                    "color": "green",
+                    "option_ids": [
+                      "5bda28f2-d412-4218-8f92-c5ea4e00c82d"
+                    ]
+                  }
+                ]
+              }
+            },
+            "Priority Level": {
+              "id": "b%3B%5Ep",
+              "name": "Priority Level",
+              "type": "select",
+              "select": {
+                "options": [
+                  {
+                    "id": "iB`W",
+                    "name": "Niedrig",
+                    "color": "gray",
+                    "description": null
+                  },
+                  {
+                    "id": "tzzC",
+                    "name": "Mittel",
+                    "color": "brown",
+                    "description": null
+                  },
+                  {
+                    "id": "k_P[",
+                    "name": "Hoch",
+                    "color": "orange",
+                    "description": null
+                  },
+                  {
+                    "id": "63462aac-c433-4df3-8015-cb3abb2f729f",
+                    "name": "Top",
+                    "color": "red",
+                    "description": null
+                  }
+                ]
+              }
+            },
+            "End Date": {
+              "id": "ufAF",
+              "name": "End Date",
+              "type": "date",
+              "date": {}
+            },
+            "Name": {
+              "id": "title",
+              "name": "Name",
+              "type": "title",
+              "title": {}
+            }
+          },
+          "related_schemas": {
+            "📋 Themen-Bibliothek": {
+              "database_id": "1a6389d5-7bd3-8034-bc69-fef680261842",
+              "schema": {
+                "title": "Themen-Bibliothek",
+                "properties": {
+                  "Erstellt": {
+                    "id": "wfpp",
+                    "name": "Erstellt",
+                    "type": "created_time",
+                    "created_time": {}
+                  },
+                  "Tags": {
+                    "id": "~%40OX",
+                    "name": "Tags",
+                    "type": "multi_select",
+                    "multi_select": {
+                      "options": []
+                    }
+                  },
+                  "Name": {
+                    "id": "title",
+                    "name": "Name",
+                    "type": "title",
+                    "title": {}
+                  }
+                },
+                "related_schemas": {}
+              }
+            }
+          }
+        }
+      },
+      "Thema": {
+        "database_id": "1a6389d5-7bd3-8034-bc69-fef680261842",
+        "schema": {
+          "title": "Themen-Bibliothek",
+          "properties": {
+            "Erstellt": {
+              "id": "wfpp",
+              "name": "Erstellt",
+              "type": "created_time",
+              "created_time": {}
+            },
+            "Tags": {
+              "id": "~%40OX",
+              "name": "Tags",
+              "type": "multi_select",
+              "multi_select": {
+                "options": []
+              }
+            },
+            "Name": {
+              "id": "title",
+              "name": "Name",
+              "type": "title",
+              "title": {}
+            }
+          },
+          "related_schemas": {}
+        }
+      }
+    }
+  }
+}

@@ -5,7 +5,7 @@ import os
 from tqdm import tqdm
 
 from notion.second_brain_manager import SecondBrainManager
-from graph_processor import DraftLangGraph
+from agents.graph_processor import DraftLangGraph
 
 # Logging konfigurieren
 logging.basicConfig(

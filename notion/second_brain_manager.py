@@ -1,6 +1,7 @@
-import logging
 import asyncio
-from typing import AsyncGenerator
+import json
+from typing import AsyncGenerator, Dict, Any
+import logging
 
 from notion.core.notion_abstract_client import AbstractNotionClient, HttpMethod
 from notion.core.notion_page_manager import NotionPageManager
@@ -68,132 +69,71 @@ class SecondBrainManager(AbstractNotionClient):
                 self.logger.info("Alle Entwürfe wurden abgerufen.")
                 break
             
-async def revise_drafts_example():
-    """Beispiel zur Überarbeitung von Entwürfen mit der neuen Methode."""
-    print("=== Second Brain Entwürfe Überarbeitungs-Beispiel ===")
-    
-    async with SecondBrainManager() as sbm:
-        # Generator für alle Entwürfe
-        drafts_generator = sbm.get_draft_entries_generator(batch_size=5)
+    # TODO: Kann eventuell auch noch in eine Datenbankbasierte Oberklasse:
+    async def get_database_schema(self) -> Dict[str, Any]:
+        """
+        Ruft das Schema der Datenbank ab, um alle verfügbaren Eigenschaften zu sehen
+        """
+        response = await self._make_request(
+            HttpMethod.GET,
+            f"databases/{self.database_id}"
+        )
         
-        # Ersten Entwurf als Beispiel nehmen
-        try:
-            page_manager = await drafts_generator.__anext__()
-            
-            print(f"Originaler Entwurf gefunden:")
-            print(f"Titel: {page_manager.title}")
-            print(f"ID: {page_manager.page_id}")
-            
-            # Aktuellen Inhalt anzeigen
-            original_content = await page_manager.get_page_text()
-            print("\n=== Originaler Inhalt ===")
-            print(original_content if original_content else "Kein Inhalt vorhanden.")
-            
-            # Beispielhafte Überarbeitung
-            new_title = f"[Überarbeitet] {page_manager.title}"
-            new_content = """# Überarbeiteter Entwurf
-
-Dies ist ein überarbeiteter Entwurf, der mit der neuen `revise_draft`-Methode erstellt wurde.
-
-## Inhaltsüberarbeitung
-- Der Originalinhalt wurde komplett ersetzt
-- Der Titel wurde aktualisiert
-- Der Status wurde auf "KI-Draft" geändert
-
-## Vorteile
-- Einfache API
-- Alle Änderungen in einem Schritt
-- Automatische Statusänderung
-"""
-            
-            # Bestätigung vom Benutzer holen
-            print("\n=== Überarbeitungsvorschau ===")
-            print(f"Neuer Titel: {new_title}")
-            print("\nNeuer Inhalt:")
-            print(new_content)
-            
-            confirm = input("\nMöchten Sie den Entwurf wirklich überarbeiten? (j/n): ")
-            
-            if confirm.lower() == "j":
-                # Überarbeitung durchführen
-                result = await page_manager.update_page_content(
-                    new_title=new_title,
-                    new_content=new_content,
-                    icon_emoji="✨"
-                )
-                
-                print("\n=== Überarbeitungsergebnis ===")
-                print(result)
-                
-                # Aktuellen Zustand nach Überarbeitung anzeigen
-                updated_content = await page_manager.get_page_text()
-                print("\n=== Aktualisierter Inhalt ===")
-                print(updated_content if updated_content else "Kein Inhalt vorhanden.")
-            else:
-                print("Überarbeitung abgebrochen.")
-                
-        except StopAsyncIteration:
-            print("Keine Entwürfe gefunden.")
+        if response is None or "error" in response:
+            error_msg = response.get('error', 'Unknown error') if response else 'No response'
+            self.logger.error("Fehler beim Abrufen des Datenbankschemas: %s", error_msg)
+            return {}
+        
+        # Extrahiere die Properties aus der Antwort
+        properties = response.get("properties", {})
+        return properties
+    
+async def main():
+    # Konfiguriere Logging
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    
+    # Erstelle eine Instanz des SecondBrainManager
+    manager = SecondBrainManager()
+    
+    # Hole das Datenbankschema
+    schema = await manager.get_database_schema()
+    
+    # Gib das Schema schön formatiert aus
+    print("\n=== DATENBANKSCHEMA ===\n")
+    
+    for prop_name, prop_details in schema.items():
+        prop_type = prop_details.get("type", "unknown")
+        print(f"Eigenschaft: {prop_name}")
+        print(f"Typ: {prop_type}")
+        
+        # Zeige zusätzliche Details je nach Eigenschaftstyp
+        if prop_type == "select" and "select" in prop_details:
+            options = prop_details["select"].get("options", [])
+            print("Optionen:")
+            for option in options:
+                color = option.get("color", "default")
+                name = option.get("name", "")
+                print(f"  - {name} (Farbe: {color})")
+        
+        elif prop_type == "multi_select" and "multi_select" in prop_details:
+            options = prop_details["multi_select"].get("options", [])
+            print("Optionen:")
+            for option in options:
+                color = option.get("color", "default")
+                name = option.get("name", "")
+                print(f"  - {name} (Farbe: {color})")
+        
+        elif prop_type == "relation" and "relation" in prop_details:
+            related_db = prop_details["relation"].get("database_id", "")
+            print(f"  Verknüpft mit Datenbank: {related_db}")
+        
+        print("-" * 40)
+    
+    # Optional: Speichere das vollständige Schema in einer JSON-Datei für detailliertere Analyse
+    with open("notion_schema.json", "w", encoding="utf-8") as f:
+        json.dump(schema, f, ensure_ascii=False, indent=2)
+    
+    print(f"\nVollständiges Schema wurde in 'notion_schema.json' gespeichert.")
 
 if __name__ == "__main__":
-    # Event-Loop ausführen
-    asyncio.run(revise_drafts_example())            
-
-
-
-# if __name__ == "__main__":
-#     # Logging konfigurieren
-#     logging.basicConfig(
-#         level=logging.INFO,
-#         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-#     )
-    
-#     async def interact_with_drafts():
-#         """Interaktive Konsolenanwendung zum Durchgehen der Entwürfe."""
-#         print("=== Second Brain Entwürfe Viewer ===")
-#         print("Durchsuche Entwürfe... (ENTER drücken, um weiterzugehen, 'q' zum Beenden)")
-        
-#         # Haupt-Session für die Datenbankabfragen
-#         async with SecondBrainManager() as sbm:
-#             # Generator für Pagination
-#             drafts_generator = sbm.get_draft_entries_generator()
-            
-#             idx = 1
-#             async for page_manager in drafts_generator:
-#                 print(f"\n--- Entwurf {idx} ---")
-#                 print(f"Titel: {page_manager.title}")
-#                 print(f"ID: {page_manager.page_id}")
-#                 print(f"URL: {page_manager.url}")
-                
-#                 action = input("\nOptionen: [ENTER] Weiter | [i] Inhalt anzeigen | [q] Beenden: ").lower()
-                
-#                 if action == 'q':
-#                     print("Programm wird beendet.")
-#                     break
-#                 elif action == 'i':
-#                     try:
-#                         print("\n=== Seiteninhalt ===")
-                        
-#                         # Page-Text direkt vom PageManager abrufen
-#                         page_text = await page_manager.get_page_text()
-                        
-#                         if not page_text or page_text == "Keine Inhalte gefunden.":
-#                             print("Kein Inhalt gefunden oder Fehler beim Abrufen des Inhalts.")
-#                         else:
-#                             # Text mit korrekter Formatierung anzeigen
-#                             print(page_text)
-                        
-#                         # Warten auf User-Input, um fortzufahren
-#                         input("\nDrücke ENTER, um fortzufahren...")
-#                     except Exception as e:
-#                         print(f"Fehler beim Anzeigen des Inhalts: {e}")
-#                         input("\nDrücke ENTER, um fortzufahren...")
-                
-#                 idx += 1
-            
-#             print("\nKeine weiteren Entwürfe gefunden oder Ende erreicht.")
-    
-#     # Event-Loop ausführen
-#     asyncio.run(interact_with_drafts())
-    
-    
+    asyncio.run(main())
