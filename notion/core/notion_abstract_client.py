@@ -9,6 +9,7 @@ import atexit
 import aiohttp
 from dotenv import load_dotenv
 
+from notion.core.exceptions.notion_request_error import NotionRequestError
 from util.logging_mixin import LoggingMixin
 
 load_dotenv()
@@ -156,17 +157,23 @@ class AbstractNotionClient(ABC, LoggingMixin):
             response.raise_for_status()
             return await response.json()
     
-    async def _make_request(self, method: Union[HttpMethod, str], endpoint: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def _make_request(self, method: Union[HttpMethod, str], endpoint: str, 
+                        data: Optional[Dict[str, Any]] = None, 
+                        fail_silently: bool = False) -> Dict[str, Any]:
         """
-        Allgemeine Methode für API-Anfragen.
+        General method for API requests with improved error handling.
         
         Args:
-            method: HTTP-Methode als Enum oder String
-            endpoint: API-Endpunkt (ohne Basis-URL)
-            data: Optional JSON-Daten für POST/PATCH-Anfragen
+            method: HTTP method as enum or string
+            endpoint: API endpoint (without base URL)
+            data: Optional JSON data for POST/PATCH requests
+            fail_silently: If True, returns empty dict on error instead of raising exception
             
         Returns:
-            Dict mit der API-Antwort
+            Dict with API response or empty dict if failed silently
+            
+        Raises:
+            NotionRequestError: If request fails and fail_silently is False
         """
         # Build the URL and normalize the method
         url = f"{self.BASE_URL}/{endpoint.lstrip('/')}"
@@ -175,7 +182,7 @@ class AbstractNotionClient(ABC, LoggingMixin):
         else:
             method_str = str(method).lower()
         
-        # Überprüfen, ob Methode gültig ist
+        # Check if method is valid
         if method_str not in [m.value for m in HttpMethod]:
             raise ValueError(f"Unsupported method: {method_str}")
         
@@ -183,7 +190,20 @@ class AbstractNotionClient(ABC, LoggingMixin):
         if data is not None and method_str in [HttpMethod.POST.value, HttpMethod.PATCH.value]:
             kwargs["json"] = data
             
-        return await self._request(method_str, url, **kwargs)
+        response = await self._request(method_str, url, **kwargs)
+        
+        # Centralized error handling
+        if response is None or "error" in response:
+            error_msg = response.get('error', 'Unknown error') if response else 'No response'
+            error_msg = f"Error in {method_str.upper()} {endpoint}: {error_msg}"
+            self.logger.error(error_msg)
+            
+            if fail_silently:
+                return {}
+            else:
+                raise NotionRequestError(error_msg, response)
+                
+        return response
     
     async def get_page(self, page_id: str) -> Dict[str, Any]:
         """Get a page by ID."""

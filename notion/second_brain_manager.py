@@ -1,18 +1,15 @@
-import asyncio
-import json
-from typing import AsyncGenerator, Dict, Any
-import logging
-
+from typing import AsyncGenerator
 from notion.core.notion_abstract_client import AbstractNotionClient, HttpMethod
 from notion.core.notion_page_manager import NotionPageManager
 from notion.core.notion_pages import NotionPages
+from notion.second_brain_page_manager import SecondBrainPageManager
 
 class SecondBrainManager(AbstractNotionClient):
     def __init__(self):
         super().__init__()
         self.database_id = NotionPages.get_database_id("WISSEN_NOTIZEN")
     
-    async def get_draft_entries_generator(self, batch_size: int = 10) -> AsyncGenerator[NotionPageManager, None]:
+    async def get_draft_entries_generator(self, batch_size: int = 10) -> AsyncGenerator[SecondBrainPageManager, None]:
         start_cursor = None
         has_more = True
 
@@ -67,73 +64,4 @@ class SecondBrainManager(AbstractNotionClient):
 
             if not has_more:
                 self.logger.info("Alle Entwürfe wurden abgerufen.")
-                break
-            
-    # TODO: Kann eventuell auch noch in eine Datenbankbasierte Oberklasse:
-    async def get_database_schema(self) -> Dict[str, Any]:
-        """
-        Ruft das Schema der Datenbank ab, um alle verfügbaren Eigenschaften zu sehen
-        """
-        response = await self._make_request(
-            HttpMethod.GET,
-            f"databases/{self.database_id}"
-        )
-        
-        if response is None or "error" in response:
-            error_msg = response.get('error', 'Unknown error') if response else 'No response'
-            self.logger.error("Fehler beim Abrufen des Datenbankschemas: %s", error_msg)
-            return {}
-        
-        # Extrahiere die Properties aus der Antwort
-        properties = response.get("properties", {})
-        return properties
-    
-async def main():
-    # Konfiguriere Logging
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    
-    # Erstelle eine Instanz des SecondBrainManager
-    manager = SecondBrainManager()
-    
-    # Hole das Datenbankschema
-    schema = await manager.get_database_schema()
-    
-    # Gib das Schema schön formatiert aus
-    print("\n=== DATENBANKSCHEMA ===\n")
-    
-    for prop_name, prop_details in schema.items():
-        prop_type = prop_details.get("type", "unknown")
-        print(f"Eigenschaft: {prop_name}")
-        print(f"Typ: {prop_type}")
-        
-        # Zeige zusätzliche Details je nach Eigenschaftstyp
-        if prop_type == "select" and "select" in prop_details:
-            options = prop_details["select"].get("options", [])
-            print("Optionen:")
-            for option in options:
-                color = option.get("color", "default")
-                name = option.get("name", "")
-                print(f"  - {name} (Farbe: {color})")
-        
-        elif prop_type == "multi_select" and "multi_select" in prop_details:
-            options = prop_details["multi_select"].get("options", [])
-            print("Optionen:")
-            for option in options:
-                color = option.get("color", "default")
-                name = option.get("name", "")
-                print(f"  - {name} (Farbe: {color})")
-        
-        elif prop_type == "relation" and "relation" in prop_details:
-            related_db = prop_details["relation"].get("database_id", "")
-            print(f"  Verknüpft mit Datenbank: {related_db}")
-        
-        print("-" * 40)
-    
-    # Optional: Speichere das vollständige Schema in einer JSON-Datei für detailliertere Analyse
-    with open("notion_schema.json", "w", encoding="utf-8") as f:
-        json.dump(schema, f, ensure_ascii=False, indent=2)
-    
-    print(f"\nVollständiges Schema wurde in 'notion_schema.json' gespeichert.")
-
-if __name__ == "__main__":
-    asyncio.run(main())
+                break     
