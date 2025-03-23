@@ -1,5 +1,6 @@
-from typing import Dict, List, Any, Optional, TypedDict
+from typing import Dict, List, Any, Optional, TypedDict, Set
 import os
+import re
 
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_openai import ChatOpenAI
@@ -7,6 +8,7 @@ from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
 from notion.core.notion_page_manager import NotionPageManager
+from notion.second_brain_page_manager import SecondBrainPageManager
 from util.logging_mixin import LoggingMixin
 from tools.tavily_search_tool import tavily_search
 
@@ -25,13 +27,19 @@ class State(TypedDict):
     revision_successful: bool
     requires_search: bool
     search_results: Optional[str]
+    detected_tags: Optional[List[str]]
+    detected_projects: Optional[List[str]]
+    detected_topics: Optional[List[str]]
+    available_projects: Optional[List[str]]
+    available_topics: Optional[List[str]]
 
 class DraftLangGraph(LoggingMixin):
     """
     Implementiert einen LangGraph für die Verarbeitung von Notion-Entwürfen.
+    Mit Unterstützung für die automatische Erkennung und Zuweisung von Tags, Projekten und Themen.
     """
     
-    def __init__(self, model_name: str = "gpt-4o", temperature: float = 0.4):
+    def __init__(self, model_name: str = "gpt-4o-mini", temperature: float = 0.4):
         api_key = os.environ.get("OPENAI_API_KEY", "sk-your-key-here")
         self.llm = ChatOpenAI(model=model_name, api_key=api_key, temperature=temperature)
         
@@ -46,16 +54,21 @@ class DraftLangGraph(LoggingMixin):
 
         # Knoten hinzufügen
         self.workflow.add_node("get_content", self.get_content_node)
+        self.workflow.add_node("fetch_metadata", self.fetch_metadata_node)
         self.workflow.add_node("assess_draft", self.assess_draft_node)
         self.workflow.add_node("search_info", self.search_info_node)
         self.workflow.add_node("revise_draft", self.revise_draft_node)
+        self.workflow.add_node("extract_references", self.extract_references_node)
+        self.workflow.add_node("update_references", self.update_references_node)
 
         # Einstiegspunkt definieren
         self.workflow.set_entry_point("get_content")
 
         # Bedingte Kanten
+        self.workflow.add_edge("get_content", "fetch_metadata")
+        
         self.workflow.add_conditional_edges(
-            "get_content",
+            "fetch_metadata",
             self.route_after_content,
             {
                 "assess_draft": "assess_draft",
@@ -76,8 +89,14 @@ class DraftLangGraph(LoggingMixin):
         # Nach der Suche immer zum Überarbeiten
         self.workflow.add_edge("search_info", "revise_draft")
         
-        # Nach der Überarbeitung Ende
-        self.workflow.add_edge("revise_draft", END)
+        # Nach der Überarbeitung zum Extrahieren der Referenzen
+        self.workflow.add_edge("revise_draft", "extract_references")
+        
+        # Nach der Extraktion zum Aktualisieren der Referenzen
+        self.workflow.add_edge("extract_references", "update_references")
+        
+        # Nach dem Aktualisieren Ende
+        self.workflow.add_edge("update_references", END)
 
         # Graph kompilieren
         self.compiled_graph = self.workflow.compile(checkpointer=self.memory)
@@ -121,6 +140,41 @@ class DraftLangGraph(LoggingMixin):
                 ],
                 "draft_content": None,
                 "revision_complete": True
+            }
+    
+    async def fetch_metadata_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Ruft alle verfügbaren Projekte und Themen ab und speichert sie im State."""
+        try:
+            # Konvertiere NotionPageManager zu SecondBrainManager, wenn nötig
+            brain_manager = self._get_brain_manager()
+            
+            # Verfügbare Projekte und Themen abrufen
+            available_projects = await brain_manager.get_all_project_names()
+            available_topics = await brain_manager.get_all_topic_names()
+            
+            # Aktuelle Tags abrufen
+            current_tags = await brain_manager.get_current_tags()
+            
+            self.logger.info("Metadata erfolgreich abgerufen: %d Projekte, %d Themen, %d Tags", 
+                          len(available_projects), len(available_topics), len(current_tags))
+            
+            return {
+                "available_projects": available_projects,
+                "available_topics": available_topics,
+                "detected_tags": current_tags,  # Bestehende Tags als Ausgangspunkt
+                "detected_projects": [],  # Wird später gefüllt
+                "detected_topics": []     # Wird später gefüllt
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Fehler beim Abrufen der Metadata: {e}")
+            
+            return {
+                "available_projects": [],
+                "available_topics": [],
+                "detected_tags": [],
+                "detected_projects": [],
+                "detected_topics": []
             }
     
     async def assess_draft_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
@@ -176,7 +230,7 @@ class DraftLangGraph(LoggingMixin):
                 "search_results": search_results
             }
         except Exception as e:
-            self.logger.error(f"Fehler bei der Informationssuche: {e}")
+            self.logger.error("Fehler bei der Informationssuche: %s", e)
             
             return {
                 "messages": state.get("messages", []) + [
@@ -250,6 +304,10 @@ class DraftLangGraph(LoggingMixin):
             update_success = True
             update_message = f"Entwurf wurde aktualisiert: {new_title}"
             
+            # Aktualisiere den Titel im draft_content für nachfolgende Nodes
+            draft_content["title"] = new_title
+            draft_content["content"] = new_content
+            
         except Exception as e:
             self.logger.error("Fehler beim Aktualisieren des Entwurfs: %s", e)
             update_message = f"Fehler beim Aktualisieren: {str(e)}"
@@ -260,8 +318,176 @@ class DraftLangGraph(LoggingMixin):
                 AIMessage(content=update_message)
             ],
             "revision_complete": True,
-            "revision_successful": update_success
+            "revision_successful": update_success,
+            "draft_content": draft_content  # Aktualisierter Inhalt
         }
+    
+    async def extract_references_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Extrahiert Projekte und Themen aus dem überarbeiteten Inhalt."""
+        draft_content = state.get("draft_content", {})
+        title = draft_content.get("title", "")
+        content = draft_content.get("content", "")
+        
+        # Verfügbare Projekte und Themen aus dem State holen
+        available_projects = state.get("available_projects", [])
+        available_topics = state.get("available_topics", [])
+        
+        # Vorhandene Tags als Ausgangspunkt (behalten für spätere Verwendung)
+        current_tags = state.get("detected_tags", [])
+        
+        # Prompt für die Extraktion der Referenzen
+        extract_prompt = f"""
+        Analysiere folgenden Notion-Eintrag und finde die am besten passenden Projekte und Themen.
+
+        # Titel
+        {title}
+        
+        # Inhalt
+        {content}
+        
+        # Verfügbare Projekte
+        {', '.join(available_projects)}
+        
+        # Verfügbare Themen
+        {', '.join(available_topics)}
+        
+        Gib deine Antwort im folgenden Format:
+        
+        PROJEKTE: [Liste von Projekten aus der verfügbaren Liste, die am besten passen]
+        THEMEN: [Liste von Themen aus der verfügbaren Liste, die am besten passen]
+        
+        Wichtig: 
+        - Wähle nur Projekte und Themen aus den verfügbaren Listen!
+        - Wähle nur 1-2 Projekte, die am besten passen.
+        - Wähle nur 2-3 Themen, die am besten passen.
+        - Sei präzise und wähle nur wirklich passende Einträge aus.
+        """
+        
+        try:
+            # LLM aufrufen
+            extraction_response = await self.llm.ainvoke(
+                [HumanMessage(content=extract_prompt)]
+            )
+            
+            extraction_text = extraction_response.content
+            
+            # Behalte die vorhandenen Tags bei
+            tags = current_tags
+            
+            # Projekte extrahieren
+            projects = []
+            if "PROJEKTE:" in extraction_text:
+                projects_section = ""
+                if "THEMEN:" in extraction_text:
+                    projects_section = extraction_text.split("PROJEKTE:")[1].split("THEMEN:")[0].strip()
+                else:
+                    projects_section = extraction_text.split("PROJEKTE:")[1].strip()
+                
+                # Projektnamen extrahieren und mit verfügbaren Projekten abgleichen
+                potential_projects = [p.strip() for p in projects_section.replace('[', '').replace(']', '').split(',')]
+                projects = [p for p in potential_projects if p in available_projects]
+            
+            # Themen extrahieren
+            topics = []
+            if "THEMEN:" in extraction_text:
+                topics_section = extraction_text.split("THEMEN:")[1].strip()
+                # Themennamen extrahieren und mit verfügbaren Themen abgleichen
+                potential_topics = [t.strip() for t in topics_section.replace('[', '').replace(']', '').split(',')]
+                topics = [t for t in potential_topics if t in available_topics]
+            
+            self.logger.info("Extrahierte Referenzen: %d Projekte, %d Themen", 
+                          len(projects), len(topics))
+            
+            # Begrenze auf maximal 2 Projekte und 3 Themen
+            projects = projects[:2]
+            topics = topics[:3]
+            
+            return {
+                "detected_tags": tags,
+                "detected_projects": projects,
+                "detected_topics": topics,
+                "messages": state.get("messages", []) + [
+                    AIMessage(content=f"Referenzen extrahiert:\nProjekte: {', '.join(projects)}\nThemen: {', '.join(topics)}")
+                ]
+            }
+            
+        except Exception as e:
+            self.logger.error("Fehler bei der Extraktion von Referenzen: %s", e)
+            
+            return {
+                "detected_tags": current_tags,  # Behalte aktuelle Tags bei
+                "detected_projects": [],
+                "detected_topics": [],
+                "messages": state.get("messages", []) + [
+                    AIMessage(content=f"Fehler bei der Extraktion von Referenzen: {str(e)}")
+                ]
+            }
+    
+    async def update_references_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Aktualisiert die Referenzen (Tags, Projekte, Themen) in Notion."""
+        tags = state.get("detected_tags", [])
+        projects = state.get("detected_projects", [])
+        topics = state.get("detected_topics", [])
+        
+        success_messages = []
+        error_messages = []
+        
+        try:
+            # Konvertiere NotionPageManager zu SecondBrainManager, wenn nötig
+            brain_manager = self._get_brain_manager()
+            
+            # Tags aktualisieren
+            if tags:
+                tags_success = await brain_manager.set_tags(tags)
+                if tags_success:
+                    success_messages.append(f"Tags aktualisiert: {', '.join(tags)}")
+                else:
+                    error_messages.append("Fehler beim Aktualisieren der Tags")
+            
+            # Projekte aktualisieren
+            if projects:
+                projects_success = await brain_manager.set_projects(projects)
+                if projects_success:
+                    success_messages.append(f"Projekte aktualisiert: {', '.join(projects)}")
+                else:
+                    error_messages.append("Fehler beim Aktualisieren der Projekte")
+            
+            # Themen aktualisieren
+            if topics:
+                topics_success = await brain_manager.set_topics(topics)
+                if topics_success:
+                    success_messages.append(f"Themen aktualisiert: {', '.join(topics)}")
+                else:
+                    error_messages.append("Fehler beim Aktualisieren der Themen")
+            
+            status_message = "\n".join(success_messages + error_messages)
+            self.logger.info("Referenzen aktualisiert: %s", status_message)
+            
+            return {
+                "messages": state.get("messages", []) + [
+                    AIMessage(content=status_message)
+                ]
+            }
+            
+        except Exception as e:
+            error_msg = f"Fehler beim Aktualisieren der Referenzen: {str(e)}"
+            self.logger.error(error_msg)
+            
+            return {
+                "messages": state.get("messages", []) + [
+                    AIMessage(content=error_msg)
+                ]
+            }
+    
+    def _get_brain_manager(self) -> SecondBrainPageManager:
+        """
+        Konvertiert den current_page_manager in einen SecondBrainManager, falls nötig.
+        """
+        if isinstance(self.current_page_manager, SecondBrainPageManager):
+            return self.current_page_manager
+        
+        # Wenn es ein NotionPageManager ist, erstelle einen neuen SecondBrainManager mit derselben page_id
+        return SecondBrainPageManager(page_id=self.current_page_manager.page_id)
     
     def route_after_content(self, state: Dict[str, Any]) -> str:
         if not state.get("draft_content"):
@@ -270,7 +496,8 @@ class DraftLangGraph(LoggingMixin):
 
     def route_after_assessment(self, state: Dict[str, Any]) -> str:
         if not state.get("needs_revision", False):
-            return "end"
+            # Wenn keine Überarbeitung nötig ist, extrahiere trotzdem Referenzen
+            return "extract_references"
         
         # Wenn eine Suche erforderlich ist, führe zuerst die Suche durch
         if state.get("requires_search", False):
@@ -292,7 +519,12 @@ class DraftLangGraph(LoggingMixin):
             "revision_complete": False,
             "revision_successful": False,
             "requires_search": False,
-            "search_results": None
+            "search_results": None,
+            "detected_tags": [],
+            "detected_projects": [],
+            "detected_topics": [],
+            "available_projects": [],
+            "available_topics": []
         }
         
         # Graph ausführen
@@ -312,6 +544,11 @@ class DraftLangGraph(LoggingMixin):
                 "success": status != "error",
                 "status": status,
                 "messages": final_state.get("messages", []),
+                "references": {
+                    "tags": final_state.get("detected_tags", []),
+                    "projects": final_state.get("detected_projects", []),
+                    "topics": final_state.get("detected_topics", [])
+                }
             }
             
         except Exception as e:

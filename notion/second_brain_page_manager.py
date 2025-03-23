@@ -1,14 +1,13 @@
-from typing import List, Dict, Any, Optional, Union, AsyncGenerator
+from typing import List, Dict, Any, Optional, Union
 import logging
 import asyncio
-import re
 
 from notion.core.exceptions.notion_request_error import NotionRequestError
 from notion.core.notion_abstract_client import HttpMethod
 from notion.core.notion_page_manager import NotionPageManager
 
 
-class SecondBrainManager(NotionPageManager):
+class SecondBrainPageManager(NotionPageManager):
     # Database IDs from the schema
     NOTES_DB_ID = "1a6389d5-7bd3-8097-aa38-e93cb052615a"
     PROJECT_DB_ID = "1a6389d5-7bd3-80a3-a60e-cb6bc02f85d6"
@@ -521,7 +520,7 @@ async def main():
     page_id = "1bf389d57bd380578ea3c9a5db952a17"
     
     # Initialize manager with existing page
-    entry = SecondBrainManager(page_id=page_id)
+    entry = SecondBrainPageManager(page_id=page_id)
     print(f"Working with entry: {page_id}")
     
     # Example 1: Get current properties

@@ -6,9 +6,6 @@ from notion.core.notion_pages import NotionPages
 class NotionPageManager(AbstractNotionClient):
     """Generische Klasse zum Schreiben und Verwalten von Notion-Seiten."""
     
-    PROJECT_DB_ID = "1a6389d5-7bd3-80a3-a60e-cb6bc02f85d6"
-    TOPIC_DB_ID = "1a6389d5-7bd3-8034-bc69-fef680261842"
-    
     def __init__(self, page_id: str = None, page_name: str = None, token: Optional[str] = None):
         """Initialisiert den NotionPageWriter.
         
