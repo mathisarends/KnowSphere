@@ -86,8 +86,37 @@ REVISION_WITH_SEARCH_PROMPT = textwrap.dedent("""
     ICON: [Ein passendes Emoji für das Thema des Eintrags]
     """)
 
+EXTRACT_REFERENCES_PROMPT = textwrap.dedent("""
+    Analysiere folgenden Notion-Eintrag und finde die am besten passenden Projekte und Themen:
+
+    TITEL: "{title}"
+    INHALT:
+    ---
+    {content}
+    ---
+
+    VERFÜGBARE PROJEKTE:
+    {projects}
+
+    VERFÜGBARE THEMEN:
+    {topics}
+
+    WICHTIG:
+    - Wähle NUR Projekte und Themen aus den verfügbaren Listen!
+    - In den meisten Fällen passt nur 1 Projekt und 1 Thema am besten.
+    - Wenn du dir nicht sicher bist, nenne lieber nichts als etwas Unpassendes.
+    - Sei sehr präzise und wähle nur wirklich thematisch passende Einträge.
+    - Bei Fachthemen ohne Projektbezug muss kein Projekt angegeben werden.
+
+    Antwortformat:
+    PROJEKTE: [Liste von 0-1 Projekten, die eindeutig passen]
+    THEMEN: [Liste von 0-2 Themen, die eindeutig passen]
+    """)
+
+
 REVISION_PROMPT_TEMPLATE = ChatPromptTemplate.from_template(REVISION_PROMPT)
 REVISION_WITH_SEARCH_PROMPT_TEMPLATE = ChatPromptTemplate.from_template(REVISION_WITH_SEARCH_PROMPT)
+EXTRACT_REFERENCES_PROMPT_TEMPLATE = ChatPromptTemplate.from_template(EXTRACT_REFERENCES_PROMPT)
 
 def get_revision_prompt(has_additional_info=False):
     """Gibt das passende Revision-Prompt basierend auf dem Vorhandensein zusätzlicher Informationen zurück."""

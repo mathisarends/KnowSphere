@@ -1,6 +1,5 @@
-from typing import Dict, List, Any, Optional, TypedDict, Set
+from typing import Dict, List, Any, Optional, TypedDict
 import os
-import re
 
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_openai import ChatOpenAI
@@ -9,11 +8,13 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from notion.core.notion_page_manager import NotionPageManager
 from notion.second_brain_page_manager import SecondBrainPageManager
+from util.ai_response_utils import clean_markdown_code_blocks
 from util.logging_mixin import LoggingMixin
 from tools.tavily_search_tool import tavily_search
 
 from agents.prompts import (
-    ASSESSMENT_PROMPT_TEMPLATE, 
+    ASSESSMENT_PROMPT_TEMPLATE,
+    EXTRACT_REFERENCES_PROMPT_TEMPLATE, 
     get_revision_prompt
 )
 
@@ -280,6 +281,8 @@ class DraftLangGraph(LoggingMixin):
                 new_content = content_parts.split("ICON:")[0].strip()
             else:
                 new_content = content_parts.strip()
+                
+        new_content = clean_markdown_code_blocks(new_content)
         
         # Icon extrahieren
         if "ICON:" in revision_text:
@@ -310,6 +313,7 @@ class DraftLangGraph(LoggingMixin):
             
         except Exception as e:
             self.logger.error("Fehler beim Aktualisieren des Entwurfs: %s", e)
+            print("Fehlerhafte Formattierung des Markdowns", new_content)
             update_message = f"Fehler beim Aktualisieren: {str(e)}"
         
         return {
@@ -335,38 +339,17 @@ class DraftLangGraph(LoggingMixin):
         # Vorhandene Tags als Ausgangspunkt (behalten für spätere Verwendung)
         current_tags = state.get("detected_tags", [])
         
-        # Prompt für die Extraktion der Referenzen
-        extract_prompt = f"""
-        Analysiere folgenden Notion-Eintrag und finde die am besten passenden Projekte und Themen.
-
-        # Titel
-        {title}
-        
-        # Inhalt
-        {content}
-        
-        # Verfügbare Projekte
-        {', '.join(available_projects)}
-        
-        # Verfügbare Themen
-        {', '.join(available_topics)}
-        
-        Gib deine Antwort im folgenden Format:
-        
-        PROJEKTE: [Liste von Projekten aus der verfügbaren Liste, die am besten passen]
-        THEMEN: [Liste von Themen aus der verfügbaren Liste, die am besten passen]
-        
-        Wichtig: 
-        - Wähle nur Projekte und Themen aus den verfügbaren Listen!
-        - Wähle nur 1-2 Projekte, die am besten passen.
-        - Wähle nur 2-3 Themen, die am besten passen.
-        - Sei präzise und wähle nur wirklich passende Einträge aus.
-        """
+        references_input = {
+            "title": title,
+            "content": content,
+            "projects": ", ".join(available_projects),
+            "topics": ", ".join(available_topics)
+        }
         
         try:
             # LLM aufrufen
             extraction_response = await self.llm.ainvoke(
-                [HumanMessage(content=extract_prompt)]
+                EXTRACT_REFERENCES_PROMPT_TEMPLATE.format_messages(**references_input)
             )
             
             extraction_text = extraction_response.content
