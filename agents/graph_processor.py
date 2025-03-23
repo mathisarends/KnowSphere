@@ -13,7 +13,8 @@ from util.logging_mixin import LoggingMixin
 
 class State(TypedDict):
     messages: List[Any]
-    current_draft: Optional[NotionPageManager]
+    page_id: str
+    page_title: str
     draft_content: Optional[Dict[str, Any]]
     needs_revision: bool
     revision_complete: bool
@@ -27,6 +28,9 @@ class DraftLangGraph(LoggingMixin):
     def __init__(self, model_name: str = "gpt-4o", temperature: float = 0.4):
         api_key = os.environ.get("OPENAI_API_KEY", "sk-your-key-here")
         self.llm = ChatOpenAI(model=model_name, api_key=api_key, temperature=temperature)
+        
+        # Initialisiere current_page_manager mit None
+        self.current_page_manager = None
         
         self.build_graph()
     
@@ -68,9 +72,9 @@ class DraftLangGraph(LoggingMixin):
     
     async def get_content_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Ruft den Inhalt des aktuellen Entwurfs ab."""
-        page_manager = state.get("current_draft")
+        page_title = state.get("page_title", "Unbekannter Titel")
         
-        if not page_manager:
+        if not self.current_page_manager:
             self.logger.error("Kein aktueller Entwurf vorhanden")
             return {
                 "messages": state.get("messages", []) + [
@@ -81,24 +85,24 @@ class DraftLangGraph(LoggingMixin):
             }
         
         try:
-            content = await page_manager.get_page_text()
-            self.logger.info("Inhalt für '%s' erfolgreich abgerufen.", page_manager.title)
+            content = await self.current_page_manager.get_page_text()
+            self.logger.info("Inhalt für '%s' erfolgreich abgerufen.", page_title)
             
             draft_content = {
-                "title": page_manager.title,
+                "title": page_title,
                 "content": content if content else "Kein Inhalt vorhanden.",
                 "exists": True
             }
             
             return {
                 "messages": state.get("messages", []) + [
-                    HumanMessage(content=f"Entwurf: {page_manager.title}")
+                    HumanMessage(content=f"Entwurf: {page_title}")
                 ],
                 "draft_content": draft_content
             }
             
         except Exception as e:
-            self.logger.error(f"Fehler beim Abrufen des Inhalts: {e}")
+            self.logger.error("Fehler beim Abrufen des Inhalts: %s", e)
             
             return {
                 "messages": state.get("messages", []) + [
@@ -174,13 +178,13 @@ class DraftLangGraph(LoggingMixin):
                 icon_emoji = icon_line
         
         # Draft aktualisieren
-        page_manager = state.get("current_draft")
         update_success = False
         update_message = ""
         
         try:
-            original_title = page_manager.title
-            result = await page_manager.update_page_content(
+            # Verwende die externe NotionPageManager-Instanz statt der aus dem State
+            original_title = self.current_page_manager.title
+            result = await self.current_page_manager.update_page_content(
                 new_title=new_title,
                 new_content=new_content,
                 icon_emoji=icon_emoji
@@ -212,14 +216,19 @@ class DraftLangGraph(LoggingMixin):
         if state.get("needs_revision", False):
             return "revise_draft"
         return "end"
-    
+        
     async def process_draft(self, page_manager: NotionPageManager) -> Dict[str, Any]:
+        # Stelle page_manager außerhalb des States zur Verfügung
+        self.current_page_manager = page_manager
+        
         initial_state = {
             "messages": [],
-            "current_draft": page_manager,
+            "page_id": page_manager.page_id,
+            "page_title": page_manager.title,
             "draft_content": None,
             "needs_revision": False,
             "revision_complete": False,
+            "revision_successful": False,
         }
         
         # Graph ausführen
@@ -228,10 +237,9 @@ class DraftLangGraph(LoggingMixin):
             final_state = await self.compiled_graph.ainvoke(initial_state, config=config)
             
             # Status ermitteln
-            stats = final_state.get("stats", {})
-            if stats.get("revised", 0) > 0:
+            if final_state.get("revision_successful", False):
                 status = "revised"
-            elif stats.get("skipped", 0) > 0:
+            elif final_state.get("revision_complete", False) and not final_state.get("needs_revision", False):
                 status = "skipped"
             else:
                 status = "error"
