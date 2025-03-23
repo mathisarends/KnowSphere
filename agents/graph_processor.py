@@ -12,11 +12,8 @@ from util.ai_response_utils import clean_markdown_code_blocks
 from util.logging_mixin import LoggingMixin
 from tools.tavily_search_tool import tavily_search
 
-from agents.prompts import (
-    ASSESSMENT_PROMPT_TEMPLATE,
-    EXTRACT_REFERENCES_PROMPT_TEMPLATE, 
-    get_revision_prompt
-)
+# Importiere die neuen strukturierten Prompts
+from agents.prompts import create_structured_prompts, get_revision_prompt
 
 class State(TypedDict):
     messages: List[Any]
@@ -35,14 +32,14 @@ class State(TypedDict):
     available_topics: Optional[List[str]]
 
 class DraftLangGraph(LoggingMixin):
-    """
-    Implementiert einen LangGraph für die Verarbeitung von Notion-Entwürfen.
-    Mit Unterstützung für die automatische Erkennung und Zuweisung von Tags, Projekten und Themen.
-    """
+    UNKNOWN_TITLE = "Unbekannter Titel"
     
     def __init__(self, model_name: str = "gpt-4o-mini", temperature: float = 0.4):
         api_key = os.environ.get("OPENAI_API_KEY", "sk-your-key-here")
         self.llm = ChatOpenAI(model=model_name, api_key=api_key, temperature=temperature)
+        
+        # Erstelle strukturierte Prompts
+        self.prompts = create_structured_prompts(self.llm)
         
         # Initialisiere current_page_manager mit None
         self.current_page_manager = None
@@ -83,27 +80,20 @@ class DraftLangGraph(LoggingMixin):
             {
                 "search_info": "search_info",
                 "revise_draft": "revise_draft",
+                "extract_references": "extract_references",
                 "end": END
             }
         )
         
-        # Nach der Suche immer zum Überarbeiten
         self.workflow.add_edge("search_info", "revise_draft")
-        
-        # Nach der Überarbeitung zum Extrahieren der Referenzen
         self.workflow.add_edge("revise_draft", "extract_references")
-        
-        # Nach der Extraktion zum Aktualisieren der Referenzen
         self.workflow.add_edge("extract_references", "update_references")
-        
-        # Nach dem Aktualisieren Ende
         self.workflow.add_edge("update_references", END)
 
-        # Graph kompilieren
         self.compiled_graph = self.workflow.compile(checkpointer=self.memory)
     
     async def get_content_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        page_title = state.get("page_title", "Unbekannter Titel")
+        page_title = state.get("page_title", DraftLangGraph.UNKNOWN_TITLE)
         
         if not self.current_page_manager:
             self.logger.error("Kein aktueller Entwurf vorhanden")
@@ -180,36 +170,57 @@ class DraftLangGraph(LoggingMixin):
     
     async def assess_draft_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Bewertet den Entwurf und entscheidet, ob eine Überarbeitung notwendig ist."""
-        chain = ASSESSMENT_PROMPT_TEMPLATE | self.llm
-        
         draft_content = state.get("draft_content", {})
-        title = draft_content.get("title", "Unbekannter Titel")
+        title = draft_content.get("title", DraftLangGraph.UNKNOWN_TITLE)
         content = draft_content.get("content", "Kein Inhalt")
         
-        assessment = await chain.ainvoke({"title": title, "content": content})
-        
-        updates = {
-            "messages": state.get("messages", []) + [assessment]
-        }
-        
-        # Prüfen, ob Überarbeitung notwendig ist
-        if "ÜBERARBEITUNG NOTWENDIG: Ja" in assessment.content:
-            updates["needs_revision"] = True
-            self.logger.info("Entwurf '%s' benötigt Überarbeitung.", title)
+        try:
+            # Verwende strukturierte Ausgabe
+            assessment_result = await self.prompts["assessment"].ainvoke({"title": title, "content": content})
             
-            # Prüfen, ob zusätzliche Recherche benötigt wird
-            if "ZUSÄTZLICHE INFORMATIONEN NOTWENDIG: Ja" in assessment.content:
-                updates["requires_search"] = True
-                self.logger.info("Zusätzliche Recherche für '%s' wird durchgeführt.", title)
+            # Prüfe, ob das Ergebnis ein Dict oder ein Objekt ist
+            if isinstance(assessment_result, dict):
+                # Direkter Zugriff auf Dictionary-Schlüssel
+                needs_revision = assessment_result.get("needs_revision", False)
+                requires_search = assessment_result.get("requires_search", False)
+                assessment_text = assessment_result.get("assessment", "Keine Bewertung verfügbar")
+                reason = assessment_result.get("reason", "Kein Grund angegeben")
             else:
-                updates["requires_search"] = False
-        else:
-            self.logger.info("Entwurf '%s' benötigt keine Überarbeitung.", title)
-            updates["needs_revision"] = False
-            updates["requires_search"] = False
-            updates["revision_complete"] = True
-        
-        return updates
+                # Zugriff auf Attribute des Objekts (wie in deinem ursprünglichen Code)
+                needs_revision = assessment_result.needs_revision
+                requires_search = assessment_result.requires_search
+                assessment_text = assessment_result.assessment
+                reason = assessment_result.reason
+            
+            assessment_message = f"""
+                BEWERTUNG: {assessment_text}
+                ÜBERARBEITUNG NOTWENDIG: {"Ja" if needs_revision else "Nein"}
+                ZUSÄTZLICHE INFORMATIONEN NOTWENDIG: {"Ja" if requires_search else "Nein"}
+                GRUND: {reason}
+            """
+            
+            self.logger.info("Bewertung für '%s' abgeschlossen: Überarbeitung=%s, Recherche=%s", 
+                        title, needs_revision, requires_search)
+            
+            return {
+                "messages": state.get("messages", []) + [
+                    AIMessage(content=assessment_message)
+                ],
+                "needs_revision": needs_revision,
+                "requires_search": requires_search,
+                "revision_complete": not needs_revision  # Wenn keine Überarbeitung, dann schon fertig
+            }
+        except Exception as e:
+            self.logger.error("Fehler bei der Bewertung des Entwurfs: %s", e)
+            
+            return {
+                "messages": state.get("messages", []) + [
+                    AIMessage(content=f"Fehler bei der Bewertung: {str(e)}")
+                ],
+                "needs_revision": False,
+                "requires_search": False,
+                "revision_complete": True
+            }
     
     async def search_info_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Führt eine Websuche durch, um zusätzliche Informationen zu sammeln."""
@@ -243,13 +254,12 @@ class DraftLangGraph(LoggingMixin):
     async def revise_draft_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Überarbeitet den Entwurf basierend auf dem LLM-Output und Rechercheergebnissen."""
         draft_content = state.get("draft_content", {})
-        title = draft_content.get("title", "Unbekannter Titel")
+        title = draft_content.get("title", DraftLangGraph.UNKNOWN_TITLE)
         content = draft_content.get("content", "Kein Inhalt")
         
         # Wähle das passende Prompt basierend auf dem Vorhandensein von Suchergebnissen
         has_additional_info = state.get("search_results") is not None
-        prompt = get_revision_prompt(has_additional_info=has_additional_info)
-        chain = prompt | self.llm
+        prompt_name = get_revision_prompt(has_additional_info=has_additional_info)
         
         # Invoke-Parameter vorbereiten
         invoke_params = {"title": title, "content": content}
@@ -258,73 +268,73 @@ class DraftLangGraph(LoggingMixin):
         if has_additional_info:
             invoke_params["additional_info"] = state.get("search_results")
         
-        revision = await chain.ainvoke(invoke_params)
-        
-        # Extrahiere neuen Titel, Inhalt und Icon aus der Antwort
-        revision_text = revision.content
-        
-        # Parsing der Revision
-        new_title = title  # Standardwert, falls kein neuer Titel angegeben
-        new_content = ""
-        icon_emoji = "🤖"  # Standardwert
-        
-        # Titel extrahieren
-        if "NEUER TITEL:" in revision_text:
-            title_line = revision_text.split("NEUER TITEL:")[1].split("\n")[0].strip()
-            if title_line:
-                new_title = title_line
-        
-        # Inhalt extrahieren
-        if "NEUER INHALT:" in revision_text:
-            content_parts = revision_text.split("NEUER INHALT:")[1]
-            if "ICON:" in content_parts:
-                new_content = content_parts.split("ICON:")[0].strip()
-            else:
-                new_content = content_parts.strip()
-                
-        new_content = clean_markdown_code_blocks(new_content)
-        
-        # Icon extrahieren
-        if "ICON:" in revision_text:
-            icon_line = revision_text.split("ICON:")[1].split("\n")[0].strip()
-            if icon_line and len(icon_line) > 0:
-                icon_emoji = icon_line
-        
-        # Draft aktualisieren
-        update_success = False
-        update_message = ""
-        
         try:
-            # Verwende die externe NotionPageManager-Instanz statt der aus dem State
-            original_title = self.current_page_manager.title
-            result = await self.current_page_manager.update_page_content(
-                new_title=new_title,
-                new_content=new_content,
-                icon_emoji=icon_emoji
-            )
+            # Verwende strukturierte Ausgabe
+            revision_result = await self.prompts[prompt_name].ainvoke(invoke_params)
             
-            self.logger.info("Entwurf '%s' erfolgreich aktualisiert zu '%s'", original_title, new_title)
-            update_success = True
-            update_message = f"Entwurf wurde aktualisiert: {new_title}"
+            # Prüfe, ob das Ergebnis ein Dict oder ein Objekt ist
+            if isinstance(revision_result, dict):
+                # Direkter Zugriff auf Dictionary-Schlüssel
+                new_title = revision_result.get("title", title)
+                new_content = clean_markdown_code_blocks(revision_result.get("content", content))
+                icon_emoji = revision_result.get("icon", "🤖")
+            else:
+                # Zugriff auf Attribute des Objekts
+                new_title = revision_result.title
+                new_content = clean_markdown_code_blocks(revision_result.content)
+                icon_emoji = revision_result.icon
             
-            # Aktualisiere den Titel im draft_content für nachfolgende Nodes
-            draft_content["title"] = new_title
-            draft_content["content"] = new_content
+            revision_message = f"""
+            NEUER TITEL: {new_title}
+            NEUER INHALT:
+            {new_content[:200]}... [gekürzt]
+            ICON: {icon_emoji}
+            """
             
+            # Draft aktualisieren
+            update_success = False
+            update_message = ""
+            
+            try:
+                # Verwende die externe NotionPageManager-Instanz statt der aus dem State
+                original_title = self.current_page_manager.title
+                result = await self.current_page_manager.update_page_content(
+                    new_title=new_title,
+                    new_content=new_content,
+                    icon_emoji=icon_emoji
+                )
+                
+                self.logger.info("Entwurf '%s' erfolgreich aktualisiert zu '%s'", original_title, new_title)
+                update_success = True
+                update_message = f"Entwurf wurde aktualisiert: {new_title}"
+                
+                # Aktualisiere den Titel im draft_content für nachfolgende Nodes
+                draft_content["title"] = new_title
+                draft_content["content"] = new_content
+                
+            except Exception as e:
+                self.logger.error("Fehler beim Aktualisieren des Entwurfs: %s", e)
+                update_message = f"Fehler beim Aktualisieren: {str(e)}"
+            
+            return {
+                "messages": state.get("messages", []) + [
+                    AIMessage(content=revision_message),
+                    AIMessage(content=update_message)
+                ],
+                "revision_complete": True,
+                "revision_successful": update_success,
+                "draft_content": draft_content  # Aktualisierter Inhalt
+            }
         except Exception as e:
-            self.logger.error("Fehler beim Aktualisieren des Entwurfs: %s", e)
-            print("Fehlerhafte Formattierung des Markdowns", new_content)
-            update_message = f"Fehler beim Aktualisieren: {str(e)}"
-        
-        return {
-            "messages": state.get("messages", []) + [
-                revision,
-                AIMessage(content=update_message)
-            ],
-            "revision_complete": True,
-            "revision_successful": update_success,
-            "draft_content": draft_content  # Aktualisierter Inhalt
-        }
+            self.logger.error("Fehler bei der Überarbeitung: %s", e)
+            
+            return {
+                "messages": state.get("messages", []) + [
+                    AIMessage(content=f"Fehler bei der Überarbeitung: {str(e)}")
+                ],
+                "revision_complete": True,
+                "revision_successful": False
+            }
     
     async def extract_references_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Extrahiert Projekte und Themen aus dem überarbeiteten Inhalt."""
@@ -347,46 +357,24 @@ class DraftLangGraph(LoggingMixin):
         }
         
         try:
-            # LLM aufrufen
-            extraction_response = await self.llm.ainvoke(
-                EXTRACT_REFERENCES_PROMPT_TEMPLATE.format_messages(**references_input)
-            )
+            # Verwende strukturierte Ausgabe
+            references_result = await self.prompts["extract_references"].ainvoke(references_input)
             
-            extraction_text = extraction_response.content
-            
-            # Behalte die vorhandenen Tags bei
-            tags = current_tags
-            
-            # Projekte extrahieren
-            projects = []
-            if "PROJEKTE:" in extraction_text:
-                projects_section = ""
-                if "THEMEN:" in extraction_text:
-                    projects_section = extraction_text.split("PROJEKTE:")[1].split("THEMEN:")[0].strip()
-                else:
-                    projects_section = extraction_text.split("PROJEKTE:")[1].strip()
-                
-                # Projektnamen extrahieren und mit verfügbaren Projekten abgleichen
-                potential_projects = [p.strip() for p in projects_section.replace('[', '').replace(']', '').split(',')]
-                projects = [p for p in potential_projects if p in available_projects]
-            
-            # Themen extrahieren
-            topics = []
-            if "THEMEN:" in extraction_text:
-                topics_section = extraction_text.split("THEMEN:")[1].strip()
-                # Themennamen extrahieren und mit verfügbaren Themen abgleichen
-                potential_topics = [t.strip() for t in topics_section.replace('[', '').replace(']', '').split(',')]
-                topics = [t for t in potential_topics if t in available_topics]
+            # Prüfe, ob das Ergebnis ein Dict oder ein Objekt ist
+            if isinstance(references_result, dict):
+                # Direkter Zugriff auf Dictionary-Schlüssel
+                projects = references_result.get("projects", [])[:2]  # Begrenze auf max. 2 Projekte
+                topics = references_result.get("topics", [])[:3]      # Begrenze auf max. 3 Themen
+            else:
+                # Zugriff auf Attribute des Objekts
+                projects = references_result.projects[:2]  # Begrenze auf max. 2 Projekte
+                topics = references_result.topics[:3]      # Begrenze auf max. 3 Themen
             
             self.logger.info("Extrahierte Referenzen: %d Projekte, %d Themen", 
-                          len(projects), len(topics))
-            
-            # Begrenze auf maximal 2 Projekte und 3 Themen
-            projects = projects[:2]
-            topics = topics[:3]
+                        len(projects), len(topics))
             
             return {
-                "detected_tags": tags,
+                "detected_tags": current_tags,  # Behalte aktuelle Tags bei
                 "detected_projects": projects,
                 "detected_topics": topics,
                 "messages": state.get("messages", []) + [
