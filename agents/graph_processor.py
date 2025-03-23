@@ -1,15 +1,19 @@
 from typing import Dict, List, Any, Optional, TypedDict
 import os
-from agents.prompts import ASSESSMENT_PROMPT, REVISION_PROMPT
 
 from langchain_core.messages import HumanMessage, AIMessage
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
 from notion.core.notion_page_manager import NotionPageManager
 from util.logging_mixin import LoggingMixin
+from tools.tavily_search_tool import tavily_search
+
+from agents.prompts import (
+    ASSESSMENT_PROMPT_TEMPLATE, 
+    get_revision_prompt
+)
 
 class State(TypedDict):
     messages: List[Any]
@@ -19,6 +23,8 @@ class State(TypedDict):
     needs_revision: bool
     revision_complete: bool
     revision_successful: bool
+    requires_search: bool
+    search_results: Optional[str]
 
 class DraftLangGraph(LoggingMixin):
     """
@@ -41,6 +47,7 @@ class DraftLangGraph(LoggingMixin):
         # Knoten hinzufügen
         self.workflow.add_node("get_content", self.get_content_node)
         self.workflow.add_node("assess_draft", self.assess_draft_node)
+        self.workflow.add_node("search_info", self.search_info_node)
         self.workflow.add_node("revise_draft", self.revise_draft_node)
 
         # Einstiegspunkt definieren
@@ -60,18 +67,22 @@ class DraftLangGraph(LoggingMixin):
             "assess_draft",
             self.route_after_assessment,
             {
+                "search_info": "search_info",
                 "revise_draft": "revise_draft",
                 "end": END
             }
         )
-
+        
+        # Nach der Suche immer zum Überarbeiten
+        self.workflow.add_edge("search_info", "revise_draft")
+        
+        # Nach der Überarbeitung Ende
         self.workflow.add_edge("revise_draft", END)
 
         # Graph kompilieren
         self.compiled_graph = self.workflow.compile(checkpointer=self.memory)
     
     async def get_content_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Ruft den Inhalt des aktuellen Entwurfs ab."""
         page_title = state.get("page_title", "Unbekannter Titel")
         
         if not self.current_page_manager:
@@ -102,7 +113,7 @@ class DraftLangGraph(LoggingMixin):
             }
             
         except Exception as e:
-            self.logger.error("Fehler beim Abrufen des Inhalts: %s", e)
+            self.logger.error(f"Fehler beim Abrufen des Inhalts: {e}")
             
             return {
                 "messages": state.get("messages", []) + [
@@ -114,8 +125,7 @@ class DraftLangGraph(LoggingMixin):
     
     async def assess_draft_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Bewertet den Entwurf und entscheidet, ob eine Überarbeitung notwendig ist."""
-        prompt = ChatPromptTemplate.from_template(ASSESSMENT_PROMPT)
-        chain = prompt | self.llm
+        chain = ASSESSMENT_PROMPT_TEMPLATE | self.llm
         
         draft_content = state.get("draft_content", {})
         title = draft_content.get("title", "Unbekannter Titel")
@@ -131,23 +141,69 @@ class DraftLangGraph(LoggingMixin):
         if "ÜBERARBEITUNG NOTWENDIG: Ja" in assessment.content:
             updates["needs_revision"] = True
             self.logger.info("Entwurf '%s' benötigt Überarbeitung.", title)
+            
+            # Prüfen, ob zusätzliche Recherche benötigt wird
+            if "ZUSÄTZLICHE INFORMATIONEN NOTWENDIG: Ja" in assessment.content:
+                updates["requires_search"] = True
+                self.logger.info("Zusätzliche Recherche für '%s' wird durchgeführt.", title)
+            else:
+                updates["requires_search"] = False
         else:
             self.logger.info("Entwurf '%s' benötigt keine Überarbeitung.", title)
             updates["needs_revision"] = False
+            updates["requires_search"] = False
             updates["revision_complete"] = True
         
         return updates
     
-    async def revise_draft_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Überarbeitet den Entwurf basierend auf dem LLM-Output."""
-        prompt = ChatPromptTemplate.from_template(REVISION_PROMPT)
-        chain = prompt | self.llm
+    async def search_info_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Führt eine Websuche durch, um zusätzliche Informationen zu sammeln."""
+        draft_content = state.get("draft_content", {})
+        title = draft_content.get("title", "")
         
+        try:
+            search_results = tavily_search(
+                query=title,
+                max_results=2,
+            )
+            
+            self.logger.info("Informationssuche für '%s' erfolgreich durchgeführt.", title)
+            
+            return {
+                "messages": state.get("messages", []) + [
+                    AIMessage(content=f"Zusätzliche Informationen recherchiert für: {title}")
+                ],
+                "search_results": search_results
+            }
+        except Exception as e:
+            self.logger.error(f"Fehler bei der Informationssuche: {e}")
+            
+            return {
+                "messages": state.get("messages", []) + [
+                    AIMessage(content=f"Fehler bei der Informationssuche: {str(e)}")
+                ],
+                "search_results": None
+            }
+    
+    async def revise_draft_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Überarbeitet den Entwurf basierend auf dem LLM-Output und Rechercheergebnissen."""
         draft_content = state.get("draft_content", {})
         title = draft_content.get("title", "Unbekannter Titel")
         content = draft_content.get("content", "Kein Inhalt")
         
-        revision = await chain.ainvoke({"title": title, "content": content})
+        # Wähle das passende Prompt basierend auf dem Vorhandensein von Suchergebnissen
+        has_additional_info = state.get("search_results") is not None
+        prompt = get_revision_prompt(has_additional_info=has_additional_info)
+        chain = prompt | self.llm
+        
+        # Invoke-Parameter vorbereiten
+        invoke_params = {"title": title, "content": content}
+        
+        # Wenn Suchergebnisse vorhanden sind, füge sie hinzu
+        if has_additional_info:
+            invoke_params["additional_info"] = state.get("search_results")
+        
+        revision = await chain.ainvoke(invoke_params)
         
         # Extrahiere neuen Titel, Inhalt und Icon aus der Antwort
         revision_text = revision.content
@@ -213,9 +269,15 @@ class DraftLangGraph(LoggingMixin):
         return "assess_draft"
 
     def route_after_assessment(self, state: Dict[str, Any]) -> str:
-        if state.get("needs_revision", False):
-            return "revise_draft"
-        return "end"
+        if not state.get("needs_revision", False):
+            return "end"
+        
+        # Wenn eine Suche erforderlich ist, führe zuerst die Suche durch
+        if state.get("requires_search", False):
+            return "search_info"
+        
+        # Sonst direkt zum Überarbeiten
+        return "revise_draft"
         
     async def process_draft(self, page_manager: NotionPageManager) -> Dict[str, Any]:
         # Stelle page_manager außerhalb des States zur Verfügung
@@ -229,6 +291,8 @@ class DraftLangGraph(LoggingMixin):
             "needs_revision": False,
             "revision_complete": False,
             "revision_successful": False,
+            "requires_search": False,
+            "search_results": None
         }
         
         # Graph ausführen

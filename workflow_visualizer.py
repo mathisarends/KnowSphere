@@ -1,6 +1,6 @@
 # File: visualize_graph.py
 import asyncio
-from graph_processor import DraftLangGraph
+from agents.graph_processor import DraftLangGraph
 
 async def visualize_graph():
     """

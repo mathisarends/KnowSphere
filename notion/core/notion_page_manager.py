@@ -159,7 +159,7 @@ class NotionPageManager(AbstractNotionClient):
                 if hasattr(self, 'title'):
                     self.title = new_title
                     
-            self.logger.info(f"Icon erfolgreich auf {icon_emoji} gesetzt.")
+            self.logger.info("Icon erfolgreich auf %s gesetzt.", icon_emoji)
             results.append(f"Icon erfolgreich auf {icon_emoji} gesetzt.")
             
             self.logger.info("Status erfolgreich auf 'KI-Draft' gesetzt.")
