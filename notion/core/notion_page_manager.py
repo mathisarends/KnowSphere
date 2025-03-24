@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from notion.core.notion_abstract_client import AbstractNotionClient, HttpMethod
 from notion.core.notion_content_converter import NotionContentConverter
 from notion.core.notion_pages import NotionPages
