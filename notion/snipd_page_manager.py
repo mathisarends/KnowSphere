@@ -1,5 +1,7 @@
+import asyncio
 from typing import Dict, List, Optional, Tuple
 from notion.core.notion_page_manager import NotionPageManager
+from util.web_scraper import AsyncWebScraper
 
 
 class SnipdPageManager(NotionPageManager):
@@ -82,3 +84,77 @@ class SnipdPageManager(NotionPageManager):
                     duration = duration_text.split()[0]
                     
         return timestamp, link, duration
+    
+    
+    async def get_transcripts_from_links(self, links: List[str]) -> Dict[str, Optional[str]]:
+        """
+        Verwendet AsyncWebScraper, um Transkripte von einer Liste von Snipd-Links zu extrahieren
+        
+        Args:
+            links: Liste von Snipd-URLs
+            
+        Returns:
+            Dictionary mit URLs als Schlüssel und Transkripten als Werte
+        """
+        results = {}
+        
+        for link in links:
+            try:
+                print(f"Scraping URL: {link}")
+                scraper = await AsyncWebScraper.create(link)
+                transcript = scraper.get_transcript()
+                
+                if transcript:
+                    print(f"Transkript gefunden ({len(transcript)} Zeichen)")
+                else:
+                    print("Kein Transkript gefunden")
+                
+                results[link] = transcript
+            except Exception as e:
+                print(f"Fehler beim Scrapen von {link}: {str(e)}")
+                results[link] = None
+        
+        return results
+    
+    async def get_all_transcripts(self) -> Dict[str, Optional[str]]:
+        """
+        Holt alle Snipd-Links von der Notion-Seite und extrahiert deren Transkripte
+        
+        Returns:
+            Dictionary mit URLs als Schlüssel und Transkripten als Werten
+        """
+        links = await self.get_snipd_links()
+        return await self.get_transcripts_from_links(links)
+
+
+# Beispielverwendung
+if __name__ == "__main__":
+    async def main():
+        # Beispiel mit direkter URL
+        test_url = "https://share.snipd.com/snip/4b28fb29-2310-46a7-881e-b59d27a3b415"
+        
+        # Einzelne URL testen
+        print(f"\nTesting single URL: {test_url}")
+        scraper = await AsyncWebScraper.create(test_url)
+        transcript = scraper.get_transcript()
+        
+        if transcript:
+            print(f"Transkript gefunden ({len(transcript)} Zeichen)")
+            print(f"Erste 200 Zeichen: {transcript[:200]}...")
+        else:
+            print("Kein Transkript gefunden")
+        
+        # Mit NotionPageManager verwenden
+        # page_manager = SnipdPageManager(page_id="deine-page-id")
+        # links = await page_manager.get_snipd_links()
+        # transcripts = await page_manager.get_transcripts_from_links(links)
+        
+        # print(f"\nGefundene Transkripte: {len(transcripts)}")
+        # for url, text in transcripts.items():
+        #     print(f"\nURL: {url}")
+        #     if text:
+        #         print(f"Transkript (ersten 200 Zeichen): {text[:200]}...")
+        #     else:
+        #         print("Kein Transkript gefunden")
+    
+    asyncio.run(main())
