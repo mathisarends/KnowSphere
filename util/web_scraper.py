@@ -1,10 +1,10 @@
-from bs4 import BeautifulSoup
-from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
+from abc import ABC, abstractmethod
 from typing import Optional, Dict, Tuple
 import asyncio
-from abc import ABC, abstractmethod
-from util.logging_mixin import LoggingMixin
 
+from bs4 import BeautifulSoup
+from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
+from util.logging_mixin import LoggingMixin
 
 class PageLoader(LoggingMixin):
     """
@@ -17,13 +17,6 @@ class PageLoader(LoggingMixin):
         """
         Lädt eine Webseite und gibt den HTML-Inhalt, das BeautifulSoup-Objekt,
         den Titel und den extrahierten Text zurück.
-        
-        Args:
-            url: Die zu ladende URL
-            timeout: Timeout für das Laden der Seite in Millisekunden
-            
-        Returns:
-            Tuple aus (raw_html, soup_object, title, text_content)
         """
         instance = cls()
         page_source = "<html><body><p>Error loading page</p></body></html>"
@@ -43,7 +36,7 @@ class PageLoader(LoggingMixin):
                     await page.goto(url, timeout=timeout*2)
                     instance.logger.info("Page loaded without 'wait_until'")
                 
-                await asyncio.sleep(2)  # Kurze Pause für dynamische Inhalte
+                await asyncio.sleep(2)
                 page_source = await page.content()
                 instance.logger.info("Page content successfully retrieved (Length: %d)", len(page_source))
                 
@@ -67,8 +60,6 @@ class PageLoader(LoggingMixin):
         
         return page_source, soup, title, text
 
-
-# Abstrakte Basisstrategie
 class ScrapingStrategy(ABC, LoggingMixin):
     """Abstrakte Basisklasse für Scraping-Strategien"""
     
@@ -78,7 +69,6 @@ class ScrapingStrategy(ABC, LoggingMixin):
         pass
 
 
-# Konkrete Transcript-Strategie
 class SnipdTranscriptScrapingStrategy(ScrapingStrategy):
     """Strategie zum Extrahieren von Transkripten"""
     
@@ -171,7 +161,6 @@ class AsyncWebScraper(LoggingMixin):
         scraper = cls()
         scraper.url = url
         
-        # Verwende den PageLoader zum Laden der Seite
         scraper.html, scraper.soup, scraper.title, scraper.text = await PageLoader.load_page(url, timeout)
         
         return scraper
@@ -184,7 +173,6 @@ class AsyncWebScraper(LoggingMixin):
             self.logger.error("No content available.")
             return None
 
-        # Wenn keine Strategie gesetzt wurde, verwende die übergebene Standardstrategie
         if not self.strategy:
             self.strategy = default_strategy_class()
 
@@ -192,14 +180,12 @@ class AsyncWebScraper(LoggingMixin):
         if not result:
             return None
 
-        # Typische Schlüssel für den Hauptinhalt
         content_keys = ["transcript", "content", "text", "main_content", "body"]
 
         for key in content_keys:
             if key in result:
                 return result[key]
 
-        # Wenn kein bekannter Schlüssel gefunden wurde, nimm den ersten Wert
         first_value = next(iter(result.values()), None)
         if isinstance(first_value, str):
             return first_value
@@ -208,10 +194,7 @@ class AsyncWebScraper(LoggingMixin):
         return None
 
 
-
-# Beispielverwendung:
 async def demo():
-    # Beispiel 1: Scraper von einer URL erstellen und nur den Textinhalt extrahieren
     scraper = await AsyncWebScraper.from_url("https://share.snipd.com/snip/4b4c2932-43e5-422c-b78f-6399030a67ad")
     content = await scraper.extract()
     print(content)
