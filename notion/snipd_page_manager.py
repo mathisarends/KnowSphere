@@ -1,4 +1,3 @@
-import asyncio
 from typing import Dict, List, Optional, Tuple
 from notion.core.notion_page_manager import NotionPageManager
 from util.web_scraper import AsyncWebScraper
@@ -126,35 +125,20 @@ class SnipdPageManager(NotionPageManager):
         links = await self.get_snipd_links()
         return await self.get_transcripts_from_links(links)
 
-
-# Beispielverwendung
-if __name__ == "__main__":
-    async def main():
-        # Beispiel mit direkter URL
-        test_url = "https://share.snipd.com/snip/4b28fb29-2310-46a7-881e-b59d27a3b415"
+    # TODO: Hier auch verwenden
+    async def scrape_snipd_url(self, url: str) -> Optional[str]:
+        """
+        Helper function to scrape a single Snipd link
         
-        # Einzelne URL testen
-        print(f"\nTesting single URL: {test_url}")
-        scraper = await AsyncWebScraper.create(test_url)
-        transcript = scraper.get_transcript()
-        
-        if transcript:
-            print(f"Transkript gefunden ({len(transcript)} Zeichen)")
-            print(f"Erste 200 Zeichen: {transcript[:200]}...")
-        else:
-            print("Kein Transkript gefunden")
-        
-        # Mit NotionPageManager verwenden
-        # page_manager = SnipdPageManager(page_id="deine-page-id")
-        # links = await page_manager.get_snipd_links()
-        # transcripts = await page_manager.get_transcripts_from_links(links)
-        
-        # print(f"\nGefundene Transkripte: {len(transcripts)}")
-        # for url, text in transcripts.items():
-        #     print(f"\nURL: {url}")
-        #     if text:
-        #         print(f"Transkript (ersten 200 Zeichen): {text[:200]}...")
-        #     else:
-        #         print("Kein Transkript gefunden")
-    
-    asyncio.run(main())
+        Args:
+            url: The Snipd URL
+            
+        Returns:
+            The extracted transcript or None
+        """
+        try:
+            scraper = await AsyncWebScraper.create(url)
+            return scraper.get_transcript()
+        except Exception as e:
+            print("Error scraping %s: %s", url, str(e))
+            return None
